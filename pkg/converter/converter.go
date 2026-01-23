@@ -49,7 +49,7 @@ func WithExtraMkfsOption(extraMkfsOpts string) Option {
 }
 
 func convertTarErofs(ctx context.Context, r io.Reader, layerPath string, mkfsExtraOpts []string) error {
-	args := append([]string{"--tar=f", "--aufs", "--quiet"}, mkfsExtraOpts...)
+	args := append([]string{"--tar=f", "--aufs", "--quiet", "-Enoinline_data"}, mkfsExtraOpts...)
 	args = append(args, layerPath)
 	cmd := exec.CommandContext(ctx, "mkfs.erofs", args...)
 	cmd.Stdin = r
