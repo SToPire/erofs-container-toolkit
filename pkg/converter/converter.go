@@ -19,6 +19,10 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+const (
+	EROFSLayerMediaType = "application/vnd.erofs.layer.v1"
+)
+
 type options struct {
 	uuid          string
 	compressors   string
@@ -178,7 +182,7 @@ func LayerConvertFunc(opt ...Option) converter.ConvertFunc {
 		}
 
 		newDesc := desc
-		newDesc.MediaType = "application/vnd.erofs"
+		newDesc.MediaType = EROFSLayerMediaType
 		newDesc.Digest = w.Digest()
 		newDesc.Size = n
 		return &newDesc, nil
