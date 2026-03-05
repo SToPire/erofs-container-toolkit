@@ -16,11 +16,13 @@ import (
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
+	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 const (
-	EROFSLayerMediaType = "application/vnd.erofs.layer.v1"
+	EROFSLayerMediaType     = "application/vnd.erofs.layer.v1"
+	EROFSManifestAnnotation = "containerd.io/snapshot/erofs.native-image.manifest.digest"
 )
 
 type options struct {
@@ -77,6 +79,37 @@ func hasMkfsErofs() bool {
 		hasMkfs = true
 	})
 	return hasMkfs
+}
+
+func ensureContentLabels(ctx context.Context, cs content.Manager, dgst digest.Digest, labels map[string]string) error {
+	if len(labels) == 0 {
+		return nil
+	}
+
+	info, err := cs.Info(ctx, dgst)
+	if err != nil {
+		return fmt.Errorf("get content info for %s: %w", dgst, err)
+	}
+	if info.Labels == nil {
+		info.Labels = make(map[string]string)
+	}
+
+	var fieldpaths []string
+	for key, value := range labels {
+		if info.Labels[key] == value {
+			continue
+		}
+		info.Labels[key] = value
+		fieldpaths = append(fieldpaths, "labels."+key)
+	}
+	if len(fieldpaths) == 0 {
+		return nil
+	}
+
+	if _, err := cs.Update(ctx, info, fieldpaths...); err != nil {
+		return fmt.Errorf("update content labels for %s: %w", dgst, err)
+	}
+	return nil
 }
 
 func LayerConvertFunc(opt ...Option) converter.ConvertFunc {
@@ -173,17 +206,21 @@ func LayerConvertFunc(opt ...Option) converter.ConvertFunc {
 		}
 
 		// update diffID label
-		labelz[labels.LabelUncompressed] = w.Digest().String()
+		newDigest := w.Digest()
+		labelz[labels.LabelUncompressed] = newDigest.String()
 		if err = w.Commit(ctx, n, "", content.WithLabels(labelz)); err != nil && !errdefs.IsAlreadyExists(err) {
 			return nil, err
 		}
 		if err := w.Close(); err != nil {
 			return nil, err
 		}
+		if err := ensureContentLabels(ctx, cs, newDigest, labelz); err != nil {
+			return nil, err
+		}
 
 		newDesc := desc
 		newDesc.MediaType = EROFSLayerMediaType
-		newDesc.Digest = w.Digest()
+		newDesc.Digest = newDigest
 		newDesc.Size = n
 		return &newDesc, nil
 	}

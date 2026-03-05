@@ -53,6 +53,10 @@ When '--all-platforms' is given all images in a manifest list must be available.
 			Name:  "erofs",
 			Usage: "Convert docker or OCI layers to EROFS native layers. Should be used in conjunction with '--oci'",
 		},
+		&cli.BoolFlag{
+			Name:  "erofs-only",
+			Usage: "Only generate EROFS manifest without legacy manifest in index (default: false, generates dual-manifest index)",
+		},
 		&cli.StringFlag{
 			Name:  "erofs-compressors",
 			Usage: "Specify compression algorithm list when converting EROFS layers",
@@ -110,6 +114,7 @@ When '--all-platforms' is given all images in a manifest list must be available.
 		convertOpts = append(convertOpts, converter.WithPlatform(platformMC))
 
 		var layerConvertFunc converter.ConvertFunc
+		var indexConvertFunc converter.ConvertFunc
 		var finalize func(ctx gocontext.Context, cs content.Store, ref string, desc *ocispec.Descriptor) (*images.Image, error)
 		if context.Bool("erofs") {
 			Opts := []convert.Option{
@@ -117,12 +122,21 @@ When '--all-platforms' is given all images in a manifest list must be available.
 				convert.WithExtraMkfsOption(context.String("erofs-mkfs-options")),
 			}
 
-			layerConvertFunc = convert.LayerConvertFunc(Opts...)
 			if !context.Bool("oci") {
 				log.L.Warn("option --erofs should be used in conjunction with --oci")
 			}
 			if context.Bool("uncompress") {
 				return errors.New("option --erofs conflicts with --uncompress")
+			}
+
+			if context.Bool("erofs-only") {
+				layerConvertFunc = convert.LayerConvertFunc(Opts...)
+			} else {
+				// Default: generate dual-manifest index
+				indexConvertFunc = func(ctx gocontext.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
+					dualConverter := convert.NewDualManifestConverter(cs, platformMC, Opts...)
+					return dualConverter.Convert(ctx, desc)
+				}
 			}
 		}
 
@@ -134,7 +148,9 @@ When '--all-platforms' is given all images in a manifest list must be available.
 			convertOpts = append(convertOpts, converter.WithDockerToOCI(true))
 		}
 
-		if layerConvertFunc != nil {
+		if indexConvertFunc != nil {
+			convertOpts = append(convertOpts, converter.WithIndexConvertFunc(indexConvertFunc))
+		} else if layerConvertFunc != nil {
 			convertOpts = append(convertOpts, converter.WithLayerConvertFunc(layerConvertFunc))
 		}
 
