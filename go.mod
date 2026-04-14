@@ -10,7 +10,6 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/log v0.1.0
 	github.com/containerd/platforms v1.0.0-rc.1
-	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/klauspost/compress v1.18.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/urfave/cli v1.22.15
