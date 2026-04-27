@@ -36,6 +36,9 @@ var (
 	sockAddr       = flag.String("addr", "/run/containerd-erofs-grpc/containerd-erofs-grpc.sock", "Socket path to listen on")
 	containerdAddr = flag.String("containerd-addr", "/run/containerd/containerd.sock", "Address for containerd's GRPC server")
 	dockerConfig   = flag.String("docker-config", "", "Optional Docker config directory or config.json path used for registry credentials")
+	daemonMode     = flag.String("daemon-mode", "eager", "Daemon implementation to use: eager, lazyd")
+	lazydBinary    = flag.String("lazyd-binary", "", "Path to lazyd binary when -daemon-mode=lazyd")
+	lazydAddr      = flag.String("lazyd-addr", "/run/lazyd/lazyd.sock", "Socket path used by lazyd when -daemon-mode=lazyd")
 	logLevel       = flag.String("log-level", "info", "Log level: trace, debug, info, warn, error, fatal, panic")
 	immutable      = flag.Bool("immutable", false, "Set IMMUTABLE_FL on EROFS layer blobs (default false for performance)")
 )
@@ -52,6 +55,7 @@ func main() {
 		"addr":            *sockAddr,
 		"containerd_addr": *containerdAddr,
 		"docker_config":   *dockerConfig,
+		"daemon_mode":     *daemonMode,
 		"immutable":       *immutable,
 		"level":           *logLevel,
 	}).Info("Starting containerd-erofs-grpc")
@@ -100,7 +104,7 @@ func serve(containerdAddress, address, root string, immutable bool) error {
 	}
 
 	creds := credentials.NewDockerConfigBackend(*dockerConfig)
-	daemonClient, err := newDaemonClient()
+	daemonClient, err := newDaemonClient(*daemonMode)
 	if err != nil {
 		return err
 	}
@@ -143,8 +147,18 @@ func serve(containerdAddress, address, root string, immutable bool) error {
 	return rpc.Serve(l)
 }
 
-func newDaemonClient() (daemon.DaemonClient, error) {
-	return daemon.NewEagerDaemon(), nil
+func newDaemonClient(mode string) (daemon.DaemonClient, error) {
+	switch mode {
+	case "eager":
+		return daemon.NewEagerDaemon(), nil
+	case "lazyd":
+		return daemon.NewLazyDaemon(daemon.LazyDaemonConfig{
+			Binary: *lazydBinary,
+			Socket: *lazydAddr,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported daemon mode %q", mode)
+	}
 }
 
 func unaryServerInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
